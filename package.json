@@ -1,0 +1,20 @@
+{ 
+  "name": "Hrv Wwb",
+  "version": "1.0.0",
+  "description": "Hrv Clan Website!",
+  "main": "index.js",
+  "scripts": {
+    "start": "netlify dev",
+    "build": "netlify build",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.4",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^2.6.1"
+  },
+  "license": "MIT"
+}
