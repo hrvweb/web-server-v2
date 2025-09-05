@@ -1,8 +1,8 @@
-// netlify/functions/signup.js
+// netlify/functions/sign-up.js
 
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
-const fetch = require('node-fetch'); // Cần thư viện node-fetch để dùng hàm fetch
+const fetch = require('node-fetch');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
@@ -11,7 +11,6 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-// Hàm tạo ID 10 chữ số ngẫu nhiên
 function generateRandom10DigitID() {
   return Math.floor(1000000000 + Math.random() * 9000000000);
 }
@@ -88,11 +87,12 @@ exports.handler = async (event) => {
         attempts++;
     } while (!isUnique && attempts < 10);
 
+    // Corrected syntax here
     if (!isUnique) {
       return {
         statusCode: 500,
         body: JSON.stringify({ message: 'Failed to generate a unique account ID' }),
-      });
+      };
     }
 
     const { error: accountError } = await supabaseServiceRole
@@ -115,6 +115,7 @@ exports.handler = async (event) => {
         }
       });
 
+    // Corrected syntax here
     if (accountError) {
       return {
         statusCode: 400,
@@ -122,7 +123,6 @@ exports.handler = async (event) => {
       };
     }
 
-    // Thực hiện lời gọi API bên ngoài bất đồng bộ
     fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
       method: 'POST',
       headers: {
@@ -134,7 +134,7 @@ exports.handler = async (event) => {
       }),
     })
       .then(response => {
-        // Có thể ghi log phản hồi nếu cần, nhưng không trả về cho client
+        // Can log response if needed, but not returned to client
       })
       .catch(err => {
         console.error('Lỗi khi gọi API ngoài:', err);
