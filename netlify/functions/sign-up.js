@@ -1,7 +1,8 @@
 // netlify/functions/signup.js
 
-import { createClient } from '@supabase/supabase-js';
-import { v4 as uuidv4 } from 'uuid';
+const { createClient } = require('@supabase/supabase-js');
+const { v4: uuidv4 } = require('uuid');
+const fetch = require('node-fetch'); // Cần thư viện node-fetch để dùng hàm fetch
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
