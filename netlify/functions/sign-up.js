@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = process.env.SUPABASE_SECRER_KEY;
+const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceRoleKey);
