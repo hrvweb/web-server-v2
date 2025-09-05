@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
+const supabaseServiceRoleKey = process.env.SUPABASE_SECRER_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceRoleKey);
@@ -29,11 +29,12 @@ exports.handler = async (event) => {
     };
   }
 
-  // 1. Tạo hoặc lấy session ID
+  // 1. Tạo hoặc lấy session ID từ cookie
   let sessionId = event.headers.cookie
     ? event.headers.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1]
     : null;
 
+  // Nếu không có session ID, tạo một ID mới và lưu vào bảng sessions
   if (!sessionId) {
     sessionId = uuidv4();
     const { error: sessionError } = await supabaseServiceRole
@@ -62,12 +63,11 @@ exports.handler = async (event) => {
       };
     }
 
-    // Lấy thông tin session và token từ phản hồi của Supabase
     const user = data.user;
     const session = data.session;
     const accessToken = session.access_token;
 
-    // 3. Tạo bản ghi tài khoản mới
+    // 3. Tạo bản ghi tài khoản mới và lưu thông tin chi tiết
     const { error: accountError } = await supabaseServiceRole
       .from('accounts')
       .insert({
@@ -94,6 +94,7 @@ exports.handler = async (event) => {
       };
     }
 
+    // 4. Trả về token và session cho client
     return {
       statusCode: 200,
       headers: {
@@ -101,7 +102,7 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         message: 'Sign-up successful!',
-        accessToken: accessToken, // Trả về token cho client
+        accessToken: accessToken,
         userId: user.id,
       }),
     };
