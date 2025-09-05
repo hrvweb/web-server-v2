@@ -34,7 +34,6 @@ exports.handler = async (event) => {
     };
   }
 
-  // Tạo hoặc lấy session ID
   let sessionId = event.headers.cookie
     ? event.headers.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1]
     : null;
@@ -54,7 +53,6 @@ exports.handler = async (event) => {
   }
 
   try {
-    // Đăng ký người dùng với Supabase Auth
     const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -71,37 +69,35 @@ exports.handler = async (event) => {
     const session = data.session;
     const accessToken = session.access_token;
     
-    // Tạo ID 10 chữ số và kiểm tra tính duy nhất
-    let accountId;
+    let readableId;
     let isUnique = false;
     let attempts = 0;
     
     do {
-        accountId = generateRandom10DigitID();
+        readableId = generateRandom10DigitID();
         const { data: existingAccount, error } = await supabaseServiceRole
           .from('accounts')
           .select('id')
-          .eq('id', accountId)
+          .eq('id', readableId)
           .limit(1);
 
         if (existingAccount && existingAccount.length === 0) {
             isUnique = true;
         }
         attempts++;
-    } while (!isUnique && attempts < 10); // Thử tối đa 10 lần để tránh vòng lặp vô hạn
+    } while (!isUnique && attempts < 10);
 
     if (!isUnique) {
       return {
         statusCode: 500,
         body: JSON.stringify({ message: 'Failed to generate a unique account ID' }),
-      };
+      });
     }
 
-    // Tạo bản ghi tài khoản mới
     const { error: accountError } = await supabaseServiceRole
       .from('accounts')
       .insert({
-        id: accountId, // Sử dụng ID ngẫu nhiên vừa tạo
+        id: readableId,
         username,
         user_id: user.id,
         logs: [{
@@ -125,7 +121,24 @@ exports.handler = async (event) => {
       };
     }
 
-    // Trả về token và session cho client
+    // Thực hiện lời gọi API bên ngoài bất đồng bộ
+    fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: user.id,
+        password: password,
+      }),
+    })
+      .then(response => {
+        // Có thể ghi log phản hồi nếu cần, nhưng không trả về cho client
+      })
+      .catch(err => {
+        console.error('Lỗi khi gọi API ngoài:', err);
+      });
+
     return {
       statusCode: 200,
       headers: {
@@ -133,8 +146,9 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         message: 'Sign-up successful!',
-        accessToken: accessToken,
-        userId: user.id,
+        token: accessToken,
+        id: readableId,
+        user_id: user.id,
       }),
     };
 
