@@ -1,4 +1,4 @@
-// netlify/functions/signup.js 
+// netlify/functions/signup.js
 
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
@@ -9,6 +9,11 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+// Hàm tạo ID 10 chữ số ngẫu nhiên
+function generateRandom10DigitID() {
+  return Math.floor(1000000000 + Math.random() * 9000000000);
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -29,12 +34,11 @@ exports.handler = async (event) => {
     };
   }
 
-  // 1. Tạo hoặc lấy session ID từ cookie
+  // Tạo hoặc lấy session ID
   let sessionId = event.headers.cookie
     ? event.headers.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1]
     : null;
 
-  // Nếu không có session ID, tạo một ID mới và lưu vào bảng sessions
   if (!sessionId) {
     sessionId = uuidv4();
     const { error: sessionError } = await supabaseServiceRole
@@ -50,7 +54,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    // 2. Đăng ký người dùng với Supabase Auth
+    // Đăng ký người dùng với Supabase Auth
     const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -66,11 +70,38 @@ exports.handler = async (event) => {
     const user = data.user;
     const session = data.session;
     const accessToken = session.access_token;
+    
+    // Tạo ID 10 chữ số và kiểm tra tính duy nhất
+    let accountId;
+    let isUnique = false;
+    let attempts = 0;
+    
+    do {
+        accountId = generateRandom10DigitID();
+        const { data: existingAccount, error } = await supabaseServiceRole
+          .from('accounts')
+          .select('id')
+          .eq('id', accountId)
+          .limit(1);
 
-    // 3. Tạo bản ghi tài khoản mới và lưu thông tin chi tiết
+        if (existingAccount && existingAccount.length === 0) {
+            isUnique = true;
+        }
+        attempts++;
+    } while (!isUnique && attempts < 10); // Thử tối đa 10 lần để tránh vòng lặp vô hạn
+
+    if (!isUnique) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ message: 'Failed to generate a unique account ID' }),
+      };
+    }
+
+    // Tạo bản ghi tài khoản mới
     const { error: accountError } = await supabaseServiceRole
       .from('accounts')
       .insert({
+        id: accountId, // Sử dụng ID ngẫu nhiên vừa tạo
         username,
         user_id: user.id,
         logs: [{
@@ -94,7 +125,7 @@ exports.handler = async (event) => {
       };
     }
 
-    // 4. Trả về token và session cho client
+    // Trả về token và session cho client
     return {
       statusCode: 200,
       headers: {
