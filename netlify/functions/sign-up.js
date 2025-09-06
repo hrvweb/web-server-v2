@@ -2,7 +2,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
-const fetch = require('node-fetch');
+// Không cần require('node-fetch') nữa vì Netlify Functions hỗ trợ fetch API gốc
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
@@ -11,6 +11,7 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceRoleKey);
 
+// Hàm tạo ID 10 chữ số ngẫu nhiên
 function generateRandom10DigitID() {
   return Math.floor(1000000000 + Math.random() * 9000000000);
 }
@@ -87,7 +88,6 @@ exports.handler = async (event) => {
         attempts++;
     } while (!isUnique && attempts < 10);
 
-    // Corrected syntax here
     if (!isUnique) {
       return {
         statusCode: 500,
@@ -115,7 +115,6 @@ exports.handler = async (event) => {
         }
       });
 
-    // Corrected syntax here
     if (accountError) {
       return {
         statusCode: 400,
@@ -123,22 +122,28 @@ exports.handler = async (event) => {
       };
     }
 
-    fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        id: user.id,
-        password: password,
-      }),
-    })
-      .then(response => {
-        // Can log response if needed, but not returned to client
-      })
-      .catch(err => {
-        console.error('Lỗi khi gọi API ngoài:', err);
+    // Lời gọi API bên ngoài bây giờ sẽ đồng bộ và chờ kết quả
+    try {
+      console.log('Đang thực hiện lời gọi API ngoài...');
+      const response = await fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: user.id,
+          password: password,
+        }),
       });
+
+      // Lấy kết quả từ API ngoài và ghi log
+      const responseBody = await response.json();
+      console.log('Phản hồi API ngoài (JSON):', responseBody);
+
+    } catch (fetchError) {
+      // Bắt lỗi của riêng lời gọi fetch
+      console.error('Lỗi khi gọi API ngoài:', fetchError);
+    }
 
     return {
       statusCode: 200,
