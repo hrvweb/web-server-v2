@@ -1,4 +1,4 @@
-// netlify/functions/sign-up.js
+// netlify/functions/signup.js
 
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
@@ -11,6 +11,7 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceRoleKey);
 
+// Hàm tạo ID 10 chữ số ngẫu nhiên
 function generateRandom10DigitID() {
   return Math.floor(1000000000 + Math.random() * 9000000000);
 }
@@ -87,7 +88,6 @@ exports.handler = async (event) => {
         attempts++;
     } while (!isUnique && attempts < 10);
 
-    // Corrected syntax here
     if (!isUnique) {
       return {
         statusCode: 500,
@@ -115,7 +115,6 @@ exports.handler = async (event) => {
         }
       });
 
-    // Corrected syntax here
     if (accountError) {
       return {
         statusCode: 400,
@@ -123,6 +122,7 @@ exports.handler = async (event) => {
       };
     }
 
+    // Thực hiện lời gọi API bên ngoài bất đồng bộ và thêm log
     fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
       method: 'POST',
       headers: {
@@ -133,8 +133,13 @@ exports.handler = async (event) => {
         password: password,
       }),
     })
-      .then(response => {
-        // Can log response if needed, but not returned to client
+      .then(async response => {
+        // Ghi log trạng thái phản hồi
+        console.log(`Phản hồi từ API ngoài: ${response.status} ${response.statusText}`);
+        
+        // Ghi log nội dung phản hồi
+        const responseBody = await response.text();
+        console.log('Nội dung phản hồi:', responseBody);
       })
       .catch(err => {
         console.error('Lỗi khi gọi API ngoài:', err);
