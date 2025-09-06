@@ -2,10 +2,10 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
-const fetch = require('node-fetch');
+// Không cần require('node-fetch') nữa vì Netlify Functions hỗ trợ fetch API gốc
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabaseAnonKey = process.env.SUPABASE_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -122,28 +122,28 @@ exports.handler = async (event) => {
       };
     }
 
-    // Thực hiện lời gọi API bên ngoài bất đồng bộ và thêm log
-    fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        id: user.id,
-        password: password,
-      }),
-    })
-      .then(async response => {
-        // Ghi log trạng thái phản hồi
-        console.log(`Phản hồi từ API ngoài: ${response.status} ${response.statusText}`);
-        
-        // Ghi log nội dung phản hồi
-        const responseBody = await response.text();
-        console.log('Nội dung phản hồi:', responseBody);
-      })
-      .catch(err => {
-        console.error('Lỗi khi gọi API ngoài:', err);
+    // Lời gọi API bên ngoài bây giờ sẽ đồng bộ và chờ kết quả
+    try {
+      console.log('Đang thực hiện lời gọi API ngoài...');
+      const response = await fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: user.id,
+          password: password,
+        }),
       });
+
+      // Lấy kết quả từ API ngoài và ghi log
+      const responseBody = await response.json();
+      console.log('Phản hồi API ngoài (JSON):', responseBody);
+
+    } catch (fetchError) {
+      // Bắt lỗi của riêng lời gọi fetch
+      console.error('Lỗi khi gọi API ngoài:', fetchError);
+    }
 
     return {
       statusCode: 200,
