@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 // Không cần require('node-fetch') nữa vì Netlify Functions hỗ trợ fetch API gốc
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_KEY;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
