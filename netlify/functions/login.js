@@ -1,6 +1,7 @@
 // netlify/functions/login.js
 
 const { createClient } = require('@supabase/supabase-js');
+const { v4: uuidv4 } = require('uuid');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
@@ -31,6 +32,8 @@ exports.handler = async (event) => {
   }
 
   const { email, password } = JSON.parse(event.body);
+  const userAgent = event.headers['user-agent'] || 'unknown';
+  const ipAddress = event.headers['x-forwarded-for'] || 'unknown';
 
   if (!email || !password) {
     return {
@@ -41,7 +44,6 @@ exports.handler = async (event) => {
   }
 
   try {
-    // Authenticate the user with Supabase Auth
     const { data, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -57,10 +59,54 @@ exports.handler = async (event) => {
 
     const user = data.user;
     const session = data.session;
-    const accessToken = session.access_token;
-    const refreshToken = session.refresh_token;
+    
+    let sessionId = event.headers.cookie
+      ? event.headers.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1]
+      : null;
 
-    // Retrieve the user's memorable ID from the accounts table
+    if (!sessionId) {
+      sessionId = uuidv4();
+      const { error: sessionError } = await supabaseServiceRole
+        .from('sessions')
+        .insert({ id: sessionId, ip_addresses: [ipAddress], user_agent: userAgent });
+        
+      if (sessionError) {
+        console.error('Lỗi khi tạo session:', sessionError);
+        return {
+          statusCode: 500,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: JSON.stringify({ message: 'Failed to create session' }),
+        };
+      }
+    } else {
+      const { error: sessionUpdateError } = await supabaseServiceRole
+        .from('sessions')
+        .update({ ip_addresses: `{${ipAddress}}` })
+        .eq('id', sessionId);
+      if (sessionUpdateError) {
+        console.error('Lỗi khi cập nhật session:', sessionUpdateError);
+      }
+    }
+    
+    const logEntry = {
+        type: 'login',
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+    };
+    
+    const { data: accountsData, error: updateError } = await supabaseServiceRole
+      .from('accounts')
+      .update({ logs: logEntry })
+      .eq('user_id', user.id);
+    
+    if (updateError) {
+      return {
+        statusCode: 500,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ message: 'Internal Server Error' }),
+      };
+    }
+    
     const { data: accountData, error: accountError } = await supabaseServiceRole
       .from('accounts')
       .select('id, user_id')
@@ -75,14 +121,15 @@ exports.handler = async (event) => {
       };
     }
 
-    // Return the tokens and user info to the client
     return {
       statusCode: 200,
-      headers: { 'Access-Control-Allow-Origin': '*' },
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Set-Cookie': `sessionId=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${31536000}`,
+      },
       body: JSON.stringify({
         message: 'Login successful!',
-        token: accessToken,
-        refresh_token: refreshToken,
+        session: session,
         id: accountData.id,
         user_id: accountData.user_id,
       }),
