@@ -1,14 +1,39 @@
-// netlify/functions/sign-up.js
+// netlify/functions/signup.js
 
 const { createClient } = require('@supabase/supabase-js');
-const { nanoid } = require('nanoid');
+const { v4: uuidv4 } = require('uuid');
 
-const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+// Hàm tạo ID 10 chữ số ngẫu nhiên
+function generateRandom10DigitID() {
+  return Math.floor(1000000000 + Math.random() * 9000000000);
+}
+
+// Hàm bất đồng bộ riêng để gọi API ngoài
+const callExternalApi = async (userId, password) => {
+  try {
+    const response = await fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: userId,
+        password: password,
+      }),
+    });
+    const responseBody = await response.text();
+    console.log('Phản hồi từ API ngoài:', response.status, responseBody);
+  } catch (err) {
+    console.error('Lỗi khi gọi API ngoài:', err);
+  }
+};
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -22,7 +47,7 @@ exports.handler = async (event) => {
       body: ''
     };
   }
-  
+
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -31,25 +56,48 @@ exports.handler = async (event) => {
     };
   }
 
-  const { email, password, username } = JSON.parse(event.body);
+  const { username, email, password } = JSON.parse(event.body);
+  const userAgent = event.headers['user-agent'] || 'unknown';
+  const ipAddress = event.headers['x-forwarded-for'] || 'unknown';
 
-  if (!email || !password || !username) {
+  if (!username || !email || !password) {
     return {
       statusCode: 400,
       headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ message: 'Email, password, and username are required' }),
+      body: JSON.stringify({ message: 'Username, email, and password are required' }),
     };
   }
 
+  // --- Bắt đầu logic quản lý session tùy chỉnh ---
+  let sessionId = event.headers.cookie
+    ? event.headers.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1]
+    : null;
+
+  if (!sessionId) {
+    sessionId = uuidv4();
+    const { error: sessionError } = await supabaseServiceRole
+      .from('sessions')
+      .insert({ id: sessionId, ip_addresses: [ipAddress], user_agent: userAgent });
+
+    if (sessionError) {
+      console.error('Lỗi khi tạo session:', sessionError);
+      return {
+        statusCode: 500,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ message: 'Failed to create session' }),
+      };
+    }
+  }
+  // --- Kết thúc logic quản lý session tùy chỉnh ---
+
   try {
-    // Check if the username is already taken
-    const { data: existingUser } = await supabaseServiceRole
+    const { data: existingUsername } = await supabaseServiceRole
       .from('accounts')
       .select('username')
       .eq('username', username)
       .single();
 
-    if (existingUser) {
+    if (existingUsername) {
       return {
         statusCode: 409,
         headers: { 'Access-Control-Allow-Origin': '*' },
@@ -57,10 +105,9 @@ exports.handler = async (event) => {
       };
     }
 
-    // Sign up the user in Supabase Auth
     const { data: userData, error: authError } = await supabase.auth.signUp({
       email,
-      password
+      password,
     });
 
     if (authError) {
@@ -76,41 +123,82 @@ exports.handler = async (event) => {
     const accessToken = session.access_token;
     const refreshToken = session.refresh_token;
 
-    // Create a unique, memorable ID
-    const memorableId = nanoid(10);
-    
-    // Save the user data to the accounts table
-    const { error: insertError } = await supabaseServiceRole
+    // --- Bắt đầu logic tạo ID duy nhất ---
+    let readableId;
+    let isUnique = false;
+    let attempts = 0;
+
+    do {
+        readableId = generateRandom10DigitID();
+        const { data: existingAccount } = await supabaseServiceRole
+          .from('accounts')
+          .select('id')
+          .eq('id', readableId)
+          .limit(1);
+
+        if (existingAccount && existingAccount.length === 0) {
+            isUnique = true;
+        }
+        attempts++;
+    } while (!isUnique && attempts < 10);
+
+    if (!isUnique) {
+      console.error('Không thể tạo ID duy nhất sau 10 lần thử.');
+      return {
+        statusCode: 500,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ message: 'Failed to generate a unique account ID' }),
+      };
+    }
+    // --- Kết thúc logic tạo ID duy nhất ---
+
+    // Save user data to the accounts table with custom fields
+    const { error: accountError } = await supabaseServiceRole
       .from('accounts')
       .insert({
-        user_id: user.id,
-        id: memorableId,
+        id: readableId,
         username,
+        user_id: user.id,
+        logs: [{
+          type: 'signup',
+          timestamp: new Date().toISOString(),
+          session_id: sessionId
+        }],
+        metadata: {
+          "banner": null,
+          "avatar": null,
+          "nickname": username,
+          "description": null,
+          "is_private": false
+        }
       });
 
-    if (insertError) {
-      console.error('Lỗi khi chèn vào bảng accounts:', insertError);
+    if (accountError) {
+      console.error('Lỗi khi chèn dữ liệu vào bảng accounts:', accountError);
       return {
         statusCode: 500,
         headers: { 'Access-Control-Allow-Origin': '*' },
         body: JSON.stringify({ message: 'Internal Server Error' }),
       };
     }
-    
+
     return {
       statusCode: 200,
-      headers: { 'Access-Control-Allow-Origin': '*' },
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Set-Cookie': `sessionId=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${31536000}`,
+      },
       body: JSON.stringify({
-        message: 'Sign up successful!',
+        message: 'Sign-up successful!',
         token: accessToken,
         refresh_token: refreshToken,
-        id: memorableId,
-        user_id: user.id
+        id: readableId,
+        user_id: user.id,
       }),
     };
 
   } catch (err) {
-    console.error('Lỗi API không xác định:', err);
+    console.error('Lỗi không xác định trong handler:', err);
     return {
       statusCode: 500,
       headers: { 'Access-Control-Allow-Origin': '*' },
