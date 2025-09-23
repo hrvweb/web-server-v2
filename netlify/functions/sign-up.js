@@ -96,7 +96,7 @@ exports.handler = async (event) => {
       .select('username')
       .eq('username', username)
       .single();
-
+    
     if (existingUsername) {
       return {
         statusCode: 409,
@@ -120,14 +120,12 @@ exports.handler = async (event) => {
 
     const user = userData.user;
     const session = userData.session;
-    const accessToken = session.access_token;
-    const refreshToken = session.refresh_token;
-
+    
     // --- Bắt đầu logic tạo ID duy nhất ---
     let readableId;
     let isUnique = false;
     let attempts = 0;
-
+    
     do {
         readableId = generateRandom10DigitID();
         const { data: existingAccount } = await supabaseServiceRole
@@ -153,17 +151,19 @@ exports.handler = async (event) => {
     // --- Kết thúc logic tạo ID duy nhất ---
 
     // Save user data to the accounts table with custom fields
+    const logEntry = {
+        type: 'signup',
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+    };
+
     const { error: accountError } = await supabaseServiceRole
       .from('accounts')
       .insert({
         id: readableId,
         username,
         user_id: user.id,
-        logs: [{
-          type: 'signup',
-          timestamp: new Date().toISOString(),
-          session_id: sessionId
-        }],
+        logs: [logEntry],
         metadata: {
           "banner": null,
           "avatar": null,
@@ -174,7 +174,6 @@ exports.handler = async (event) => {
       });
 
     if (accountError) {
-      console.error('Lỗi khi chèn dữ liệu vào bảng accounts:', accountError);
       return {
         statusCode: 500,
         headers: { 'Access-Control-Allow-Origin': '*' },
@@ -190,15 +189,13 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         message: 'Sign-up successful!',
-        token: accessToken,
-        refresh_token: refreshToken,
-        id: readableId,
-        user_id: user.id,
+        **session**: session,
+        **id**: readableId,
+        **user_id**: user.id,
       }),
     };
 
   } catch (err) {
-    console.error('Lỗi không xác định trong handler:', err);
     return {
       statusCode: 500,
       headers: { 'Access-Control-Allow-Origin': '*' },
