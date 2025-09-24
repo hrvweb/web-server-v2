@@ -1,4 +1,4 @@
-// netlify/functions/sign-up.js
+// netlify/functions/signup.js
 
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
@@ -68,7 +68,6 @@ exports.handler = async (event) => {
     };
   }
 
-  // --- Bắt đầu logic quản lý session tùy chỉnh ---
   let sessionId = event.headers.cookie
     ? event.headers.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1]
     : null;
@@ -88,7 +87,6 @@ exports.handler = async (event) => {
       };
     }
   }
-  // --- Kết thúc logic quản lý session tùy chỉnh ---
 
   try {
     const { data: existingUsername } = await supabaseServiceRole
@@ -121,7 +119,6 @@ exports.handler = async (event) => {
     const user = userData.user;
     const session = userData.session;
     
-    // --- Bắt đầu logic tạo ID duy nhất ---
     let readableId;
     let isUnique = false;
     let attempts = 0;
@@ -148,9 +145,7 @@ exports.handler = async (event) => {
         body: JSON.stringify({ message: 'Failed to generate a unique account ID' }),
       };
     }
-    // --- Kết thúc logic tạo ID duy nhất ---
 
-    // Save user data to the accounts table with custom fields
     const logEntry = {
         type: 'signup',
         timestamp: new Date().toISOString(),
@@ -189,9 +184,9 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         message: 'Sign-up successful!',
-        **session**: session,
-        **id**: readableId,
-        **user_id**: user.id,
+        session: session,
+        id: readableId,
+        user_id: user.id,
       }),
     };
 
