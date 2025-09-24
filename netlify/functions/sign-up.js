@@ -1,4 +1,4 @@
-// netlify/functions/signup.js
+// netlify/functions/sign-up.js
 
 const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
@@ -15,72 +15,87 @@ function generateRandom10DigitID() {
   return Math.floor(1000000000 + Math.random() * 9000000000);
 }
 
-exports.handler = async (event) => {
+// Hàm bất đồng bộ riêng để gọi API ngoài
+const callExternalApi = async (userId, password) => {
   try {
-    if (event.httpMethod === 'OPTIONS') {
-      return {
-        statusCode: 204,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
-        body: ''
-      };
-    }
+    const response = await fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: userId,
+        password: password,
+      }),
+    });
+    const responseBody = await response.text();
+    console.log('Phản hồi từ API ngoài:', response.status, responseBody);
+  } catch (err) {
+    console.error('Lỗi khi gọi API ngoài:', err);
+  }
+};
 
-    if (event.httpMethod !== 'POST') {
+exports.handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+      body: ''
+    };
+  }
+
+  if (event.httpMethod !== 'POST') {
+    return {
+      statusCode: 405,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ message: 'Method Not Allowed' }),
+    };
+  }
+
+  const { username, email, password } = JSON.parse(event.body);
+  const userAgent = event.headers['user-agent'] || 'unknown';
+  const ipAddress = event.headers['x-forwarded-for'] || 'unknown';
+
+  if (!username || !email || !password) {
+    return {
+      statusCode: 400,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ message: 'Username, email, and password are required' }),
+    };
+  }
+
+  // --- Bắt đầu logic quản lý session tùy chỉnh ---
+  let sessionId = event.headers.cookie
+    ? event.headers.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1]
+    : null;
+
+  if (!sessionId) {
+    sessionId = uuidv4();
+    const { error: sessionError } = await supabaseServiceRole
+      .from('sessions')
+      .insert({ id: sessionId, ip_addresses: [ipAddress], user_agent: userAgent });
+
+    if (sessionError) {
+      console.error('Lỗi khi tạo session:', sessionError);
       return {
-        statusCode: 405,
+        statusCode: 500,
         headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ message: 'Method Not Allowed' }),
+        body: JSON.stringify({ message: 'Failed to create session' }),
       };
     }
+  }
+  // --- Kết thúc logic quản lý session tùy chỉnh ---
 
-    const { username, email, password } = JSON.parse(event.body);
-    const userAgent = event.headers['user-agent'] || 'unknown';
-    const ipAddress = event.headers['x-forwarded-for'] || 'unknown';
-
-    if (!username || !email || !password) {
-      return {
-        statusCode: 400,
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ message: 'Username, email, and password are required' }),
-      };
-    }
-
-    let sessionId = event.headers.cookie
-      ? event.headers.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1]
-      : null;
-
-    if (!sessionId) {
-      sessionId = uuidv4();
-      const { error: sessionError } = await supabaseServiceRole
-        .from('sessions')
-        .insert({ id: sessionId, ip_addresses: [ipAddress], user_agent: userAgent });
-
-      if (sessionError) {
-        return {
-          statusCode: 500,
-          headers: { 'Access-Control-Allow-Origin': '*' },
-          body: JSON.stringify({ message: 'Lỗi khi tạo session', error: sessionError }),
-        };
-      }
-    }
-
-    const { data: existingUsername, error: usernameCheckError } = await supabaseServiceRole
+  try {
+    const { data: existingUsername } = await supabaseServiceRole
       .from('accounts')
       .select('username')
       .eq('username', username)
       .single();
-
-    if (usernameCheckError && usernameCheckError.code !== 'PGRST116') {
-      return {
-        statusCode: 500,
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ message: 'Lỗi khi kiểm tra username', error: usernameCheckError }),
-      };
-    }
     
     if (existingUsername) {
       return {
@@ -99,32 +114,25 @@ exports.handler = async (event) => {
       return {
         statusCode: 400,
         headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ message: 'Lỗi đăng ký', error: authError }),
+        body: JSON.stringify({ message: authError.message }),
       };
     }
 
     const user = userData.user;
     const session = userData.session;
     
+    // --- Bắt đầu logic tạo ID duy nhất ---
     let readableId;
     let isUnique = false;
     let attempts = 0;
     
     do {
         readableId = generateRandom10DigitID();
-        const { data: existingAccount, error: accountIdCheckError } = await supabaseServiceRole
+        const { data: existingAccount } = await supabaseServiceRole
           .from('accounts')
           .select('id')
           .eq('id', readableId)
           .limit(1);
-
-        if (accountIdCheckError && accountIdCheckError.code !== 'PGRST116') {
-           return {
-             statusCode: 500,
-             headers: { 'Access-Control-Allow-Origin': '*' },
-             body: JSON.stringify({ message: 'Lỗi khi kiểm tra ID', error: accountIdCheckError }),
-           };
-        }
 
         if (existingAccount && existingAccount.length === 0) {
             isUnique = true;
@@ -133,20 +141,23 @@ exports.handler = async (event) => {
     } while (!isUnique && attempts < 10);
 
     if (!isUnique) {
+      console.error('Không thể tạo ID duy nhất sau 10 lần thử.');
       return {
         statusCode: 500,
         headers: { 'Access-Control-Allow-Origin': '*' },
         body: JSON.stringify({ message: 'Failed to generate a unique account ID' }),
       };
     }
+    // --- Kết thúc logic tạo ID duy nhất ---
 
+    // Save user data to the accounts table with custom fields
     const logEntry = {
         type: 'signup',
         timestamp: new Date().toISOString(),
         session_id: sessionId,
     };
 
-    const { error: accountInsertError } = await supabaseServiceRole
+    const { error: accountError } = await supabaseServiceRole
       .from('accounts')
       .insert({
         id: readableId,
@@ -162,11 +173,11 @@ exports.handler = async (event) => {
         }
       });
 
-    if (accountInsertError) {
+    if (accountError) {
       return {
         statusCode: 500,
         headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ message: 'Lỗi khi tạo tài khoản', error: accountInsertError }),
+        body: JSON.stringify({ message: 'Internal Server Error' }),
       };
     }
 
@@ -178,19 +189,17 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         message: 'Sign-up successful!',
-        session: session,
-        id: readableId,
-        user_id: user.id,
+        **session**: session,
+        **id**: readableId,
+        **user_id**: user.id,
       }),
     };
 
   } catch (err) {
-    // Đoạn code này sẽ bắt mọi lỗi và in ra toàn bộ stack trace
-    console.error('Lỗi không lường trước trong hàm:', err);
     return {
       statusCode: 500,
       headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ message: 'Lỗi máy chủ nội bộ. Vui lòng xem logs để biết chi tiết.' }),
+      body: JSON.stringify({ message: 'Internal Server Error' }),
     };
   }
 };
