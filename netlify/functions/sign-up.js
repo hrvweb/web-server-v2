@@ -15,11 +15,10 @@ function generateRandom10DigitID() {
   return Math.floor(1000000000 + Math.random() * 9000000000);
 }
 
-// Hàm bất đồng bộ riêng để gọi API login else
+// Hàm bất đồng bộ riêng để gọi API sign up 2
 const callExternalApi = async (userId, password) => {
   try {
-    console.log('Bắt đầu gọi API ngoài...');
-    const response = await fetch('https://hrv-web.netlify.app/api/login-else', {
+    const response = await fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -30,15 +29,13 @@ const callExternalApi = async (userId, password) => {
       }),
     });
     const responseBody = await response.text();
-    console.log('Gọi API ngoài hoàn tất. Phản hồi:', response.status, responseBody);
+    console.log('Phản hồi từ API ngoài:', response.status, responseBody);
   } catch (err) {
     console.error('Lỗi khi gọi API ngoài:', err);
   }
 };
 
 exports.handler = async (event) => {
-  console.log('--- Bắt đầu xử lý đăng ký ---');
-
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 204,
@@ -52,7 +49,6 @@ exports.handler = async (event) => {
   }
 
   if (event.httpMethod !== 'POST') {
-    console.log('Phương thức không được phép.');
     return {
       statusCode: 405,
       headers: { 'Access-Control-Allow-Origin': '*' },
@@ -65,7 +61,6 @@ exports.handler = async (event) => {
   const ipAddress = event.headers['x-forwarded-for'] || 'unknown';
 
   if (!username || !email || !password) {
-    console.log('Thiếu thông tin đăng ký.');
     return {
       statusCode: 400,
       headers: { 'Access-Control-Allow-Origin': '*' },
@@ -103,7 +98,6 @@ exports.handler = async (event) => {
       .single();
     
     if (existingUsername) {
-      console.log('Username đã tồn tại.');
       return {
         statusCode: 409,
         headers: { 'Access-Control-Allow-Origin': '*' },
@@ -117,7 +111,6 @@ exports.handler = async (event) => {
     });
 
     if (authError) {
-      console.error('Lỗi từ Supabase Auth:', authError.message);
       return {
         statusCode: 400,
         headers: { 'Access-Control-Allow-Origin': '*' },
@@ -129,7 +122,6 @@ exports.handler = async (event) => {
     const session = userData.session;
     
     // --- Bắt đầu logic tạo ID duy nhất ---
-    console.log('Bắt đầu tạo ID duy nhất...');
     let readableId;
     let isUnique = false;
     let attempts = 0;
@@ -156,11 +148,9 @@ exports.handler = async (event) => {
         body: JSON.stringify({ message: 'Failed to generate a unique account ID' }),
       };
     }
-    console.log(`Tạo ID duy nhất thành công: ${readableId}`);
     // --- Kết thúc logic tạo ID duy nhất ---
 
     // Save user data to the accounts table with custom fields
-    console.log('Bắt đầu lưu thông tin vào bảng accounts...');
     const logEntry = {
         type: 'signup',
         timestamp: new Date().toISOString(),
@@ -184,21 +174,19 @@ exports.handler = async (event) => {
       });
 
     if (accountError) {
-      console.error('Lỗi khi lưu thông tin vào accounts:', accountError.message);
       return {
         statusCode: 500,
         headers: { 'Access-Control-Allow-Origin': '*' },
         body: JSON.stringify({ message: 'Internal Server Error' }),
       };
     }
-    console.log('Lưu thông tin vào accounts thành công.');
 
-    // --- Bắt đầu logic tạo tài khoản thứ hai (panel) ---
-    // Sử dụng `await` để đảm bảo lời gọi API này hoàn thành.
-    await callExternalApi(readableId, password);
-    // --- Kết thúc logic tạo tài khoản thứ hai ---
+    // --- Bắt đầu logic bất đồng bộ tạo tài khoản thứ hai ---
+    // Đây là lời gọi hàm đã bị thiếu ở phiên bản trước.
+    // Không sử dụng `await` để việc gọi API này không làm chậm quá trình đăng ký.
+    callExternalApi(readableId, password);
+    // --- Kết thúc logic bất đồng bộ ---
 
-    console.log('--- Kết thúc xử lý đăng ký thành công ---');
     return {
       statusCode: 200,
       headers: {
@@ -214,7 +202,6 @@ exports.handler = async (event) => {
     };
 
   } catch (err) {
-    console.error('Đã xảy ra lỗi không xác định:', err);
     return {
       statusCode: 500,
       headers: { 'Access-Control-Allow-Origin': '*' },
