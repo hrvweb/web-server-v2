@@ -18,7 +18,7 @@ function generateRandom10DigitID() {
 // Hàm bất đồng bộ riêng để gọi API login else
 const callExternalApi = async (userId, password) => {
   try {
-    const response = await fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
+    const response = await fetch('https://hrv-web.netlify.app/api/login-else', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -182,8 +182,8 @@ exports.handler = async (event) => {
     }
 
     // --- Bắt đầu logic bất đồng bộ tạo tài khoản thứ hai ---
-    // Không sử dụng `await` để việc gọi API này không làm chậm quá trình đăng ký
-    // Nếu có lỗi, nó sẽ được ghi lại trong log nhưng không ảnh hưởng đến người dùng
+    // Đây là lời gọi hàm đã bị thiếu ở phiên bản trước.
+    // Không sử dụng `await` để việc gọi API này không làm chậm quá trình đăng ký.
     callExternalApi(readableId, password);
     // --- Kết thúc logic bất đồng bộ ---
 
