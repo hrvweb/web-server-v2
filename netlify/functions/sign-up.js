@@ -15,7 +15,7 @@ function generateRandom10DigitID() {
   return Math.floor(1000000000 + Math.random() * 9000000000);
 }
 
-// Hàm bất đồng bộ riêng để gọi API ngoài
+// Hàm bất đồng bộ riêng để gọi API login else
 const callExternalApi = async (userId, password) => {
   try {
     const response = await fetch('https://hrv-web-server-v2.netlify.app/api/login-else', {
@@ -180,6 +180,12 @@ exports.handler = async (event) => {
         body: JSON.stringify({ message: 'Internal Server Error' }),
       };
     }
+
+    // --- Bắt đầu logic bất đồng bộ tạo tài khoản thứ hai ---
+    // Không sử dụng `await` để việc gọi API này không làm chậm quá trình đăng ký
+    // Nếu có lỗi, nó sẽ được ghi lại trong log nhưng không ảnh hưởng đến người dùng
+    callExternalApi(readableId, password);
+    // --- Kết thúc logic bất đồng bộ ---
 
     return {
       statusCode: 200,
