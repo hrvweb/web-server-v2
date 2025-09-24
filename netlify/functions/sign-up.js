@@ -189,9 +189,9 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         message: 'Sign-up successful!',
-        **session**: session,
-        **id**: readableId,
-        **user_id**: user.id,
+        session: session,
+        id: readableId,
+        user_id: user.id,
       }),
     };
 
