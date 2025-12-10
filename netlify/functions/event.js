@@ -4,7 +4,7 @@ const auctionData = require('../../.local/output.json');
 // Biến môi trường
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
-const IMAGE_BASE_URL = 'https://hrv-clan.is-local.org/img/';
+const IMAGE_BASE_URL = 'https://auction-game.neal.fun/';
 
 // Khởi tạo Supabase Client
 let supabase = null;
