@@ -1,9 +1,10 @@
 // event.js
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
+const path = require('path');
 
 // --- Cấu hình Đường dẫn và Mã hóa ---
-const DATA_FILE_PATH = './output.json';
+const DATA_FILE_PATH = path.resolve(__dirname, '..', '..', '.local', 'output.json');
 const ENCRYPTION_KEY_HEX = 'd8a089c2ceb1045918a2198991f78b0d2bed29c1729eabaa3e6bcfeaff92d14f';
 
 // Khóa mã hóa
