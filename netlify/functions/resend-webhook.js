@@ -11,33 +11,34 @@ exports.handler = async (event) => {
         if (body.type !== 'email.received') return { statusCode: 200 };
 
         const emailId = body.data.email_id;
+        console.log(`[DEBUG] Đang xử lý Email ID: ${emailId}`);
 
-        // --- BƯỚC QUAN TRỌNG: Gọi Resend API để lấy nội dung đầy đủ ---
+        // --- 1. GỌI RESEND API VỚI LOG CHI TIẾT ---
         const resendRes = await fetch(`https://api.resend.com/emails/${emailId}`, {
             headers: { Authorization: `Bearer ${RESEND_API_KEY}` }
         });
         
+        const resendStatus = resendRes.status;
+        console.log(`[DEBUG] Resend API Status: ${resendStatus}`);
+
         if (!resendRes.ok) {
-            console.error("Không lấy được nội dung từ Resend");
-            return { statusCode: 500, body: "Resend API Error" };
+            const errorText = await resendRes.text();
+            console.error(`[ERROR] Resend API thất bại: ${errorText}`);
+            return { statusCode: resendStatus, body: `Resend Error: ${errorText}` };
         }
 
         const emailFullData = await resendRes.json();
-        
         const sender = emailFullData.from;
         const subject = emailFullData.subject || "No Subject";
-        // Lấy text, nếu không có thì lấy html (bỏ tag), nếu không có nữa thì báo nội dung trống
-        const emailContent = emailFullData.text || 
-                             emailFullData.html?.replace(/<[^>]*>?/gm, '').substring(0, 1900) || 
-                             "Nội dung trống...";
+        const emailContent = emailFullData.text?.substring(0, 1900) || "Nội dung văn bản trống...";
 
-        // --- BƯỚC 2: Tìm thread như cũ ---
+        // --- 2. TÌM THREAD TRÊN DISCORD ---
         const threadsRes = await fetch(`https://discord.com/api/v10/guilds/${GUILD_ID}/threads/active`, {
             headers: { Authorization: `Bot ${BOT_TOKEN}` }
         });
         const threadsData = await threadsRes.json();
-        const activeThreads = threadsData.threads || [];
-        const existingThread = activeThreads.find(t => 
+        
+        const existingThread = (threadsData.threads || []).find(t => 
             t.parent_id === FORUM_CHANNEL_ID && t.name === sender
         );
 
@@ -45,40 +46,43 @@ exports.handler = async (event) => {
             ? `https://discord.com/api/v10/channels/${existingThread.id}/messages`
             : `https://discord.com/api/v10/channels/${FORUM_CHANNEL_ID}/threads`;
 
-        // --- BƯỚC 3: Chuẩn bị gửi sang Discord ---
-        const discordPayload = existingThread ? {
-            embeds: [{
-                title: `Re: ${subject}`,
-                description: emailContent,
-                color: 0x5865F2,
-                timestamp: new Date().toISOString()
-            }]
+        // --- 3. GỬI FILE HTML QUA FORMDATA ---
+        const formData = new FormData();
+        
+        const messagePayload = existingThread ? {
+            embeds: [{ title: `Re: ${subject}`, description: emailContent, color: 0x5865F2 }]
         } : {
             name: sender.substring(0, 100),
             message: {
-                embeds: [{
-                    title: subject,
-                    author: { name: sender },
-                    description: emailContent,
-                    color: 0x5865F2,
-                    timestamp: new Date().toISOString()
-                }]
+                embeds: [{ title: subject, author: { name: sender }, description: emailContent, color: 0x5865F2 }]
             }
         };
 
-        const response = await fetch(url, {
+        formData.append('payload_json', JSON.stringify(messagePayload));
+
+        if (emailFullData.html) {
+            // Chuyển HTML thành file đính kèm
+            const htmlBlob = new Blob([emailFullData.html], { type: 'text/html' });
+            formData.append('files[0]', htmlBlob, 'view-email.html');
+        }
+
+        const discordRes = await fetch(url, {
             method: 'POST',
-            headers: { 
-                "Authorization": `Bot ${BOT_TOKEN}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(discordPayload)
+            headers: { "Authorization": `Bot ${BOT_TOKEN}` },
+            body: formData
         });
 
+        if (!discordRes.ok) {
+            const discordErr = await discordRes.text();
+            console.error(`[ERROR] Discord API thất bại: ${discordErr}`);
+            return { statusCode: discordRes.status, body: discordErr };
+        }
+
+        console.log("[DEBUG] Hoàn tất gửi tới Discord!");
         return { statusCode: 200, body: "Success" };
 
     } catch (err) {
-        console.error(err);
+        console.error("[CRITICAL ERROR]:", err.message);
         return { statusCode: 500, body: err.message };
     }
 };
