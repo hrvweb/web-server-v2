@@ -1,45 +1,63 @@
-// ID kênh Forum của bạn đã được dán trực tiếp vào đây
+const GUILD_ID = "1208004053758509077";
 const FORUM_CHANNEL_ID = "1453409265468571789";
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
 exports.handler = async (event) => {
-    // Chỉ chấp nhận POST từ Resend Webhook
-    if (event.httpMethod !== "POST") {
-        return { statusCode: 405, body: "Method Not Allowed" };
-    }
+    if (event.httpMethod !== "POST") return { statusCode: 405 };
 
     try {
         const body = JSON.parse(event.body);
-        
-        // Kiểm tra đúng event từ Resend
-        if (body.type !== 'email.received') {
-            return { statusCode: 200, body: "Not an email event" };
-        }
+        if (body.type !== 'email.received') return { statusCode: 200 };
 
         const payload = body.data;
         const sender = payload.from;
         const subject = payload.subject || "No Subject";
-        // Giới hạn 1900 ký tự để không bị lỗi Discord
-        const emailContent = payload.text?.substring(0, 1900) || "Nội dung trống (xem file đính kèm)";
+        const emailContent = payload.text?.substring(0, 1900) || "Xem nội dung HTML đính kèm";
 
-        // URL chuẩn để tạo bài đăng (thread) mới trong Forum
-        const url = `https://discord.com/api/v10/channels/${FORUM_CHANNEL_ID}/threads`;
+        // 1. Lấy tất cả active threads từ GUILD ID theo phát hiện của bạn
+        const threadsRes = await fetch(`https://discord.com/api/v10/guilds/${GUILD_ID}/threads/active`, {
+            headers: { Authorization: `Bot ${BOT_TOKEN}` }
+        });
+        const threadsData = await threadsRes.json();
 
-        // Cấu trúc Payload cho Forum Channel
-        const discordPayload = {
-            name: sender.substring(0, 100), // Tiêu đề bài đăng là Email người gửi
-            message: {
+        // 2. Lọc ra thread thuộc forum này và có tên trùng với email người gửi
+        const activeThreads = threadsData.threads || [];
+        const existingThread = activeThreads.find(t => 
+            t.parent_id === FORUM_CHANNEL_ID && t.name === sender
+        );
+
+        let url;
+        let method = 'POST';
+        let discordPayload = {};
+
+        if (existingThread) {
+            // Gửi vào thread cũ
+            url = `https://discord.com/api/v10/channels/${existingThread.id}/messages`;
+            discordPayload = {
                 embeds: [{
-                    title: subject,
-                    author: { name: sender },
+                    title: `Re: ${subject}`,
                     description: emailContent,
-                    footer: { text: "Hrv Clan Mail System" },
-                    timestamp: new Date().toISOString(),
-                    color: 0x5865F2 // Màu Blurple
+                    color: 0x5865F2,
+                    timestamp: new Date().toISOString()
                 }]
-            }
-        };
+            };
+        } else {
+            // Tạo thread mới trong Forum
+            url = `https://discord.com/api/v10/channels/${FORUM_CHANNEL_ID}/threads`;
+            discordPayload = {
+                name: sender.substring(0, 100),
+                message: {
+                    embeds: [{
+                        title: subject,
+                        description: emailContent,
+                        color: 0x5865F2,
+                        timestamp: new Date().toISOString()
+                    }]
+                }
+            };
+        }
 
+        // 3. Thực thi gửi tin nhắn/tạo thread
         const response = await fetch(url, {
             method: 'POST',
             headers: { 
@@ -49,18 +67,15 @@ exports.handler = async (event) => {
             body: JSON.stringify(discordPayload)
         });
 
-        const result = await response.json();
-
         if (!response.ok) {
-            console.error("Lỗi từ Discord API:", result);
-            return { statusCode: response.status, body: JSON.stringify(result) };
+            const error = await response.json();
+            console.error("Discord Error:", error);
+            return { statusCode: response.status, body: JSON.stringify(error) };
         }
 
-        return { statusCode: 200, body: "Thread Created Successfully" };
+        return { statusCode: 200, body: "Success" };
 
     } catch (err) {
-        console.error("Lỗi Server:", err);
         return { statusCode: 500, body: err.message };
     }
 };
-
