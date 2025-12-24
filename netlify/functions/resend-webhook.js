@@ -3,6 +3,9 @@ const FORUM_CHANNEL_ID = "1453409265468571789";
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
+// Hàm hỗ trợ chờ đợi
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 exports.handler = async (event) => {
     if (event.httpMethod !== "POST") return { statusCode: 405 };
 
@@ -11,20 +14,20 @@ exports.handler = async (event) => {
         if (body.type !== 'email.received') return { statusCode: 200 };
 
         const emailId = body.data.email_id;
-        console.log(`[DEBUG] Đang xử lý Email ID: ${emailId}`);
+        console.log(`[DEBUG] Nhận Webhook cho ID: ${emailId}. Đang chờ 2 giây...`);
 
-        // --- 1. GỌI RESEND API VỚI LOG CHI TIẾT ---
+        // CHỜ 2 GIÂY để Resend kịp lưu Email vào Database của họ
+        await sleep(2000);
+
+        // --- 1. GỌI RESEND API ---
         const resendRes = await fetch(`https://api.resend.com/emails/${emailId}`, {
             headers: { Authorization: `Bearer ${RESEND_API_KEY}` }
         });
         
-        const resendStatus = resendRes.status;
-        console.log(`[DEBUG] Resend API Status: ${resendStatus}`);
-
         if (!resendRes.ok) {
             const errorText = await resendRes.text();
-            console.error(`[ERROR] Resend API thất bại: ${errorText}`);
-            return { statusCode: resendStatus, body: `Resend Error: ${errorText}` };
+            console.error(`[ERROR] Resend API vẫn báo 404 hoặc lỗi: ${errorText}`);
+            return { statusCode: resendRes.status, body: errorText };
         }
 
         const emailFullData = await resendRes.json();
@@ -37,7 +40,6 @@ exports.handler = async (event) => {
             headers: { Authorization: `Bot ${BOT_TOKEN}` }
         });
         const threadsData = await threadsRes.json();
-        
         const existingThread = (threadsData.threads || []).find(t => 
             t.parent_id === FORUM_CHANNEL_ID && t.name === sender
         );
@@ -46,9 +48,8 @@ exports.handler = async (event) => {
             ? `https://discord.com/api/v10/channels/${existingThread.id}/messages`
             : `https://discord.com/api/v10/channels/${FORUM_CHANNEL_ID}/threads`;
 
-        // --- 3. GỬI FILE HTML QUA FORMDATA ---
+        // --- 3. GỬI QUA FORMDATA (CÓ FILE HTML) ---
         const formData = new FormData();
-        
         const messagePayload = existingThread ? {
             embeds: [{ title: `Re: ${subject}`, description: emailContent, color: 0x5865F2 }]
         } : {
@@ -61,7 +62,6 @@ exports.handler = async (event) => {
         formData.append('payload_json', JSON.stringify(messagePayload));
 
         if (emailFullData.html) {
-            // Chuyển HTML thành file đính kèm
             const htmlBlob = new Blob([emailFullData.html], { type: 'text/html' });
             formData.append('files[0]', htmlBlob, 'view-email.html');
         }
@@ -74,15 +74,15 @@ exports.handler = async (event) => {
 
         if (!discordRes.ok) {
             const discordErr = await discordRes.text();
-            console.error(`[ERROR] Discord API thất bại: ${discordErr}`);
+            console.error(`[ERROR] Discord API lỗi: ${discordErr}`);
             return { statusCode: discordRes.status, body: discordErr };
         }
 
-        console.log("[DEBUG] Hoàn tất gửi tới Discord!");
+        console.log("[DEBUG] Thành công!");
         return { statusCode: 200, body: "Success" };
 
     } catch (err) {
-        console.error("[CRITICAL ERROR]:", err.message);
+        console.error("[CRITICAL]:", err.message);
         return { statusCode: 500, body: err.message };
     }
 };
