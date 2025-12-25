@@ -143,7 +143,7 @@ exports.handler = async (event) => {
     if (accountError) throw accountError;
 
     // --- Gọi API bên ngoài ---
-    // await callExternalApi(readableId, password);
+    await callExternalApi(readableId, password);
 
     // 4. TRẢ VỀ THÀNH CÔNG (CHỈ TRẢ VỀ DATA CẦN THIẾT)
     return {
