@@ -6,15 +6,14 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SECRET_KEY;
 
-// Khởi tạo Service Role Client (Dùng cho các tác vụ Admin)
+// Admin Client (Service Role)
 const supabaseServiceRole = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 exports.handler = async (event) => {
-  // 1. CHẶN NGHIÊM NGẶT (GIẢ CHẾT)
-  // Chỉ chấp nhận POST, không trả về CORS để trình duyệt tự chặn request lạ
+  // 1. CHẶN GIẢ CHẾT (Dành cho request không phải POST)
   if (event.httpMethod !== 'POST') {
     return {
-      statusCode: 502, // Bad Gateway
+      statusCode: 502,
       body: '',
     };
   }
@@ -25,7 +24,6 @@ exports.handler = async (event) => {
                    '127.0.0.1';
 
   // 3. KHỞI TẠO ANON CLIENT VỚI IP CHUYỂN TIẾP
-  // Việc này giúp Supabase nhận diện đúng IP client để chặn Brute-force
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: {
       headers: { 'x-forwarded-for': clientIp },
@@ -36,7 +34,6 @@ exports.handler = async (event) => {
     const body = JSON.parse(event.body || '{}');
     const { email, password } = body;
 
-    // Nếu thiếu thông tin, giả vờ lỗi server
     if (!email || !password) {
       return { statusCode: 502, body: '' };
     }
@@ -48,7 +45,6 @@ exports.handler = async (event) => {
     });
 
     if (authError) {
-      // Trả về lỗi 401 để người dùng thật biết sai pass/email
       return {
         statusCode: 401,
         headers: { 'Content-Type': 'application/json' },
@@ -73,14 +69,14 @@ exports.handler = async (event) => {
         user_agent: userAgent 
       });
     } else {
-      // Gọi RPC cập nhật IP mới vào mảng (nếu chưa có)
+      // FIX LỖI: Sử dụng await đúng cú pháp cho RPC (không dùng .catch)
       await supabaseServiceRole.rpc('update_session_ip', { 
         s_id: sessionId, 
         new_ip: clientIp 
-      }).catch(() => null); 
+      });
     }
 
-    // 6. GHI LOG ĐĂNG NHẬP BẰNG RPC (NHANH & AN TOÀN)
+    // 6. GHI LOG ĐĂNG NHẬP BẰNG RPC
     const logEntry = {
       type: 'login',
       timestamp: new Date().toISOString(),
@@ -88,13 +84,12 @@ exports.handler = async (event) => {
       ip: clientIp
     };
 
-    // Gọi hàm SQL để append log vào mảng jsonb
     await supabaseServiceRole.rpc('append_account_log', { 
       target_user_id: user.id, 
       new_log: logEntry 
     });
 
-    // 7. LẤY READABLE ID ĐỂ TRẢ VỀ
+    // 7. LẤY DATA TÀI KHOẢN
     const { data: accData } = await supabaseServiceRole
       .from('accounts')
       .select('id')
@@ -104,7 +99,6 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers: {
-        // Thiết lập Cookie bảo mật cao
         'Set-Cookie': `sessionId=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=31536000`,
         'Content-Type': 'application/json'
       },
@@ -117,6 +111,7 @@ exports.handler = async (event) => {
     };
 
   } catch (err) {
+    // Log lỗi thật ra Netlify console để bạn theo dõi
     console.error('Login Fatal Error:', err.message);
     return {
       statusCode: 502,
